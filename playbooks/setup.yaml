@@ -1,0 +1,58 @@
+- name: install tools and charts
+  hosts: all            
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Update apt cache (unconditional)
+      become: yes
+      shell: apt-get update -y
+      args:
+        warn: false
+
+    - name: install packages
+      become: yes
+      shell: apt-get install -y curl ca-certificates tar gzip
+      args:
+        warn: false
+
+    - name: install helm
+      become: yes
+      shell: |
+        set -euo pipefail
+        curl -fsSL "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3" -o /tmp/get_helm.sh
+        chmod +x /tmp/get_helm.sh
+        /tmp/get_helm.sh
+        rm -f /tmp/get_helm.sh
+      args:
+        executable: /bin/bash
+        warn: false
+
+    - name: ingress-nginx Helm repo
+      shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+      args: { warn: false }
+
+    - name: prometheus Helm repo
+      shell: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      args: { warn: false }
+
+    - name: Update helm repos
+      shell: helm repo update
+      args: { warn: false }
+
+    - name: install ingress-nginx
+      shell: >
+        helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx
+        --namespace ingress-nginx --create-namespace
+        --wait
+      args:
+        chdir: "{{ playbook_dir | default('.') }}"
+        warn: false
+
+    - name: install kube-prometheus
+        helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack
+        --namespace monitoring --create-namespace
+        --wait
+      args:
+        chdir: "{{ playbook_dir | default('.') }}"
+        warn: false
