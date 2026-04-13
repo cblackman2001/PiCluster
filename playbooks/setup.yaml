@@ -1,23 +1,37 @@
 - name: install tools and charts
-  hosts: all            
+  hosts: all
   become: yes
   gather_facts: yes
 
   tasks:
+    - name: setup kubeconfig for {{ ansible_user }}
+      file:
+        path: "/home/{{ ansible_user }}/.kube"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: copy admin.conf to user kubeconfig
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "/home/{{ ansible_user }}/.kube/config"
+        remote_src: yes
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0600'
+
     - name: Update apt cache (unconditional)
-      become: yes
       shell: apt-get update -y
       args:
         warn: false
 
     - name: install packages
-      become: yes
       shell: apt-get install -y curl ca-certificates tar gzip
       args:
         warn: false
 
     - name: install helm
-      become: yes
       shell: |
         set -euo pipefail
         curl -fsSL "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3" -o /tmp/get_helm.sh
@@ -28,31 +42,79 @@
         executable: /bin/bash
         warn: false
 
+    - name: metallb Helm repo
+      shell: helm repo add metallb https://metallb.github.io/metallb || true
+      args: { warn: false }
+
     - name: ingress-nginx Helm repo
-      shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+      shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx || true
       args: { warn: false }
 
     - name: prometheus Helm repo
-      shell: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      shell: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
       args: { warn: false }
 
     - name: Update helm repos
       shell: helm repo update
       args: { warn: false }
 
+    - name: install metallb
+      shell: >
+        helm upgrade --install metallb metallb/metallb
+        --namespace metallb-system --create-namespace
+        --wait
+      args: { warn: false }
+
+    - name: wait for metallb controller
+      shell: >
+        kubectl wait --namespace metallb-system
+        --for=condition=ready pod
+        --selector=app.kubernetes.io/component=controller
+        --timeout=120s
+      args: { warn: false }
+
+    - name: apply metallb L2 config
+      when: metallb_ip_range is defined and metallb_ip_range != ""
+      shell: |
+        cat <<'MANIFEST' | kubectl apply -f -
+        apiVersion: metallb.io/v1beta1
+        kind: IPAddressPool
+        metadata:
+          name: default-pool
+          namespace: metallb-system
+        spec:
+          addresses:
+            - {{ metallb_ip_range }}
+        ---
+        apiVersion: metallb.io/v1beta1
+        kind: L2Advertisement
+        metadata:
+          name: default-l2
+          namespace: metallb-system
+        spec:
+          ipAddressPools:
+            - default-pool
+        MANIFEST
+      args:
+        executable: /bin/bash
+        warn: false
+
     - name: install ingress-nginx
       shell: >
         helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx
         --namespace ingress-nginx --create-namespace
         --wait
-      args:
-        chdir: "{{ playbook_dir | default('.') }}"
-        warn: false
+      args: { warn: false }
 
-    - name: install kube-prometheus
+    - name: install kube-prometheus-stack
+      shell: >
         helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack
         --namespace monitoring --create-namespace
+        --set grafana.ingress.enabled=true
+        --set grafana.ingress.ingressClassName=nginx
+        --set "grafana.ingress.hosts[0]=grafana.local"
+        --set prometheus.ingress.enabled=true
+        --set prometheus.ingress.ingressClassName=nginx
+        --set "prometheus.ingress.hosts[0]=prometheus.local"
         --wait
-      args:
-        chdir: "{{ playbook_dir | default('.') }}"
-        warn: false
+      args: { warn: false }

@@ -5,7 +5,7 @@
   vars:
     ansible_become_pass: "{{ ansible_ssh_pass }}"
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    ssh_pubkey_path: "{{ playbook_dir }}/Kubespray_SSH.pub"
+    ssh_pubkey_path: "{{ playbook_dir }}/RSA.pub"
 
   tasks:
     - name: read public key
@@ -17,7 +17,6 @@
     - name: public key as var
       set_fact:
         controller_pubkey: "{{ controller_pubkey_raw.content | b64decode }}"
-      delegate_to: localhost
 
     - name: check .ssh
       file:

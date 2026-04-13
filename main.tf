@@ -28,7 +28,7 @@ locals {
   node0_yaml_content = templatefile("${path.module}/tpls/node0.yaml.tpl", {
     node0        = var.ips[0]
     ansible_user = var.ansible_user
-    ssh_key      = var.ssh_key
+    ssh_key      = "RSA"
   })
 }
 
@@ -59,12 +59,12 @@ resource "tls_private_key" "node_key" {
 
 resource "local_file" "node_private_key" {
   content         = tls_private_key.node_key.private_key_pem
-  filename        = "${path.module}/playbooks/${var.ssh_key}"
+  filename        = "${path.module}/playbooks/RSA"
   file_permission = "0600"
 }
 
 resource "local_file" "node_public_key" {
   content         = tls_private_key.node_key.public_key_openssh
-  filename        = "${path.module}/playbooks/${var.ssh_key}.pub"
+  filename        = "${path.module}/playbooks/RSA.pub"
   file_permission = "0644"
 }
